@@ -6,7 +6,9 @@ const enum TokenizerState {
   data = 'data',
   atRuleStart = 'atRuleStart',
   ruleSelectorStart = 'ruleSelectorStart',
-
+  ruleSelectorEnd = 'ruleSelectorEnd',
+  declPropStart = 'declPropStart',
+  declPropEnd = 'declPropEnd',
 }
 
 export default class EventedCssTokenizer {
@@ -20,6 +22,7 @@ export default class EventedCssTokenizer {
 
   private atRuleBuffer = '';
   private ruleSelectorBuffer = '';
+  private declPropBuffer = '';
 
   constructor(
     private delegate: TokenizerDelegate,
@@ -32,7 +35,8 @@ export default class EventedCssTokenizer {
   reset() {
     this.transitionTo(TokenizerState.beforeData);
     this.input = '';
-    this.tagNameBuffer = '';
+    this.ruleSelectorBuffer = '';
+    this.declPropBuffer = '';
 
     this.index = 0;
     this.line = 1;
@@ -106,7 +110,18 @@ export default class EventedCssTokenizer {
 
   private appendToRuleSelector(char: string) : void {
     this.ruleSelectorBuffer += char;
-    // this.delegate.appendToTagName(char);
+    this.delegate.appendToRuleSelector(char);
+  }
+
+  private finishRuleSelector(): void {
+    this.delegate.finishRuleSelector();
+    this.transitionTo(TokenizerState.ruleSelectorEnd);
+    this.ruleSelectorBuffer = ''
+  }
+
+  private appendToDeclProp(char: string): void {
+    this.declPropBuffer += char;
+    this.delegate.appendToDeclProp(char);
   }
 
   states: { [k in TokenizerState]?: (this: EventedCssTokenizer) => void } = {
@@ -130,10 +145,24 @@ export default class EventedCssTokenizer {
       let char = this.consume();
 
       if (char === '{') {
-        this.transitionTo(TokenizerState.beforeAttributeName);
+        this.finishRuleSelector()
       } else {
         this.appendToRuleSelector(char);
       }
     },
+
+    ruleSelectorEnd() {
+      let char = this.consume();
+      
+      if (isAlpha(char)) {
+        this.transitionTo(TokenizerState.declPropStart)
+        this.appendToDeclProp(char)
+      } else if (char === ':') {
+        this.transitionTo(TokenizerState.declPropEnd)
+        this.delegate.finishDeclProp();
+      }
+    },
+
+
   };
 }
